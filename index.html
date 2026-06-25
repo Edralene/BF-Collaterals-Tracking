@@ -272,6 +272,15 @@
     .inventory-figure.out{background:var(--warning-soft);color:var(--warning)}
     .inventory-card-actions{display:flex;gap:7px;flex:none}
     .inventory-empty{padding:20px 14px;text-align:center;border:1px dashed #D7D9DE;border-radius:13px;background:#fff;color:var(--muted);font-size:12px;line-height:1.5}
+    .inventory-page-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 1px 0;color:var(--muted);font-size:11px;font-weight:700}
+    .inventory-page-summary strong{color:var(--ink)}
+    .inventory-page-items{display:flex;flex-direction:column;gap:9px;margin-top:9px}
+    .inventory-pagination{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)}
+    .inventory-page-btn{height:34px;min-width:34px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:12px;font-weight:800;padding:0 10px}
+    .inventory-page-btn:hover:not(:disabled){background:var(--brand-soft);border-color:#E7BBC1;color:var(--brand-dark)}
+    .inventory-page-btn.current{background:var(--brand);border-color:var(--brand);color:#fff}
+    .inventory-page-btn:disabled{opacity:.45;cursor:not-allowed}
+    .inventory-page-ellipsis{min-width:18px;text-align:center;color:var(--muted);font-size:13px;font-weight:800}
     .item-row{grid-template-columns:minmax(0,1.2fr)80px minmax(0,.8fr)40px}
     .item-row .field select{padding:9px 31px 9px 10px;font-size:13px}
     .item-availability{grid-column:1/-1;min-height:28px;padding:8px 10px;border-radius:10px;background:#F3F4F6;color:#5C6168;font-size:11px;font-weight:700;line-height:1.42}
@@ -290,6 +299,8 @@
       .inventory-form .primary-btn{grid-column:1/-1;width:100%}
       .inventory-card{align-items:flex-start}
       .inventory-card-actions{flex-direction:column}
+      .inventory-pagination{justify-content:space-between;gap:5px}
+      .inventory-page-btn{min-width:32px;padding:0 8px}
       .item-row{grid-template-columns:minmax(0,1fr)72px 38px}
       .item-row .condition-field{display:none}
     }
@@ -592,6 +603,8 @@
     const MAX_ATTACHMENT_SIZE = 3 * 1024 * 1024;
     let records = [];
     let inventory = [];
+    const INVENTORY_PAGE_SIZE = 5;
+    let inventoryCurrentPage = 1;
     let inventoryEditingId = null;
     let pendingAttachments = [];
     let attachmentDbPromise = null;
@@ -956,14 +969,36 @@
       if($('#inventoryQty')) $('#inventoryQty').value = 1;
       if($('#inventorySaveBtn')) $('#inventorySaveBtn').textContent = 'Add item';
     }
-    function renderInventoryList(){
+    function getInventoryPageNumbers(totalPages, currentPage){
+      if(totalPages <= 7) return Array.from({length:totalPages}, (_, index) => index + 1);
+      const pages = [1];
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+      if(start > 2) pages.push('…');
+      for(let page = start; page <= end; page++) pages.push(page);
+      if(end < totalPages - 1) pages.push('…');
+      pages.push(totalPages);
+      return pages;
+    }
+
+    function renderInventoryList(page = inventoryCurrentPage){
       const container = $('#inventoryList');
       if(!container) return;
       if(!inventory.length){
+        inventoryCurrentPage = 1;
         container.innerHTML = '<div class="inventory-empty">Wala pang inventory item. Add the items that can be borrowed, then set the total quantity you actually have.</div>';
         return;
       }
-      container.innerHTML = inventory.slice().sort((a,b) => a.name.localeCompare(b.name)).map(item => {
+
+      const sortedItems = inventory.slice().sort((a,b) => a.name.localeCompare(b.name));
+      const totalPages = Math.max(1, Math.ceil(sortedItems.length / INVENTORY_PAGE_SIZE));
+      inventoryCurrentPage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+      const startIndex = (inventoryCurrentPage - 1) * INVENTORY_PAGE_SIZE;
+      const visibleItems = sortedItems.slice(startIndex, startIndex + INVENTORY_PAGE_SIZE);
+      const firstItem = startIndex + 1;
+      const lastItem = Math.min(startIndex + INVENTORY_PAGE_SIZE, sortedItems.length);
+
+      const cards = visibleItems.map(item => {
         const out = inventoryOutQty(item);
         const available = inventoryAvailableQty(item);
         const alternatives = normalizeAlternatives(item.alternatives);
@@ -976,6 +1011,24 @@
           <div class="inventory-card-actions"><button type="button" class="soft-btn small-btn" data-inventory-edit="${safe(item.id)}">Edit</button><button type="button" class="danger-btn small-btn" data-inventory-delete="${safe(item.id)}">Delete</button></div>
         </article>`;
       }).join('');
+
+      const pageButtons = getInventoryPageNumbers(totalPages, inventoryCurrentPage).map(page => {
+        if(page === '…') return '<span class="inventory-page-ellipsis" aria-hidden="true">…</span>';
+        return `<button type="button" class="inventory-page-btn ${page === inventoryCurrentPage ? 'current' : ''}" data-inventory-page="${page}" aria-label="Go to inventory page ${page}" ${page === inventoryCurrentPage ? 'aria-current="page"' : ''}>${page}</button>`;
+      }).join('');
+
+      const pagination = totalPages > 1 ? `<nav class="inventory-pagination" aria-label="Inventory pages">
+        <button type="button" class="inventory-page-btn" data-inventory-page="${inventoryCurrentPage - 1}" ${inventoryCurrentPage === 1 ? 'disabled' : ''} aria-label="Previous inventory page">‹</button>
+        ${pageButtons}
+        <button type="button" class="inventory-page-btn" data-inventory-page="${inventoryCurrentPage + 1}" ${inventoryCurrentPage === totalPages ? 'disabled' : ''} aria-label="Next inventory page">›</button>
+      </nav>` : '';
+
+      container.innerHTML = `<div class="inventory-page-summary"><span>Showing <strong>${firstItem}–${lastItem}</strong> of <strong>${sortedItems.length}</strong> item${sortedItems.length === 1 ? '' : 's'}</span><span>Page <strong>${inventoryCurrentPage}</strong> of <strong>${totalPages}</strong></span></div><div class="inventory-page-items">${cards}</div>${pagination}`;
+
+      $$('[data-inventory-page]', container).forEach(button => button.addEventListener('click', () => {
+        if(button.disabled) return;
+        renderInventoryList(Number(button.dataset.inventoryPage));
+      }));
       $$('[data-inventory-edit]', container).forEach(button => button.addEventListener('click', () => {
         const item = inventory.find(entry => entry.id === button.dataset.inventoryEdit);
         if(!item) return;
@@ -993,7 +1046,7 @@
         inventory = inventory.filter(entry => entry.id !== item.id);
         queueInventoryDelete(item);
         if(!saveInventory()) return;
-        renderInventoryList();
+        renderInventoryList(inventoryCurrentPage);
         refreshItemRowStatuses();
         showToast('Inventory item deleted.');
       }));
@@ -1024,8 +1077,13 @@
         inventory.push({id:inventoryUid(), name, totalQty, alternatives, createdAt:new Date().toISOString()});
       }
       if(!saveInventory()) return;
+      if(!wasEditingInventory){
+        const sorted = inventory.slice().sort((a,b) => a.name.localeCompare(b.name));
+        const addedIndex = sorted.findIndex(item => item.name === name);
+        inventoryCurrentPage = Math.max(1, Math.floor(Math.max(0, addedIndex) / INVENTORY_PAGE_SIZE) + 1);
+      }
       resetInventoryForm();
-      renderInventoryList();
+      renderInventoryList(inventoryCurrentPage);
       renderRecords();
       refreshItemRowStatuses();
       showToast(wasEditingInventory ? 'Inventory updated.' : 'Item added to inventory.');
