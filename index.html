@@ -298,6 +298,7 @@
     /* Firebase login + cloud sync */
     body:not(.is-authenticated) .app,
     body:not(.is-authenticated) .fab{display:none}
+    body.is-authenticated .auth-screen{display:none}
     .auth-screen{position:fixed;inset:0;z-index:100;background:linear-gradient(145deg,#FFF4F5 0%,#F6F7F9 60%,#FFF 100%);display:grid;place-items:center;padding:20px;overflow:auto}
     .auth-card{width:min(460px,100%);background:#fff;border:1px solid rgba(230,232,235,.95);border-radius:26px;box-shadow:0 22px 52px rgba(54,28,32,.13);padding:28px 24px;text-align:center}
     .auth-mark{width:58px;height:58px;border-radius:19px;background:linear-gradient(135deg,var(--brand),var(--brand-dark));display:grid;place-items:center;color:#fff;margin:0 auto 17px;box-shadow:0 12px 25px rgba(181,32,44,.25)}
